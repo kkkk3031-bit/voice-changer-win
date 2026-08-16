@@ -1,0 +1,122 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Unit test dsp.py + Engine callback on real Windows Python
+        shell: pwsh
+        run: |
+          python -c "
+          import numpy as np
+          from dsp import PitchShifter, Echo, robot, clip
+
+          SR = 44100
+          def tone(freq, dur=1.0, sr=SR):
+              t = np.arange(int(sr*dur)) / sr
+              return np.sin(2*np.pi*freq*t).astype(np.float32)
+
+          def dominant_freq(x, sr=SR):
+              x = x[int(len(x)*0.2):]
+              win = x * np.hanning(len(x))
+              spec = np.abs(np.fft.rfft(win))
+              freqs = np.fft.rfftfreq(len(win), 1/sr)
+              return freqs[np.argmax(spec)]
+
+          def run_blockwise(fn, x, block=2048):
+              out = []
+              for i in range(0, len(x), block):
+                  c = x[i:i+block]
+                  if len(c) < block:
+                      c = np.pad(c, (0, block-len(c)))
+                  out.append(fn(c))
+              return np.concatenate(out)
+
+          x = tone(220.0)
+          ps = PitchShifter()
+          y = run_blockwise(lambda c: ps.process(c, 1.5), x)
+          f = dominant_freq(y)
+          assert abs(f - 330) < 15, f'chipmunk shift wrong: got {f}'
+          print(f'chipmunk OK: {f:.1f}Hz')
+
+          ps2 = PitchShifter()
+          y2 = run_blockwise(lambda c: ps2.process(c, 0.7), x)
+          f2 = dominant_freq(y2)
+          assert abs(f2 - 154) < 15, f'deep shift wrong: got {f2}'
+          print(f'deep OK: {f2:.1f}Hz')
+
+          state = {'t': 0.0}
+          y3 = run_blockwise(lambda c: robot(c, SR, 55.0, state), x)
+          assert np.isfinite(y3).all()
+          print('robot OK')
+
+          echo = Echo(SR, delay_seconds=0.1, feedback=0.4, mix=0.6)
+          impulse = np.zeros(SR, dtype=np.float32); impulse[0] = 1.0
+          y4 = run_blockwise(lambda c: echo.process(c), impulse, block=512)
+          assert y4.max() > 0.1
+          print('echo OK')
+
+          c = clip(tone(440.0) * 3.0)
+          assert c.max() <= 1.0 and c.min() >= -1.0
+          print('clip OK')
+
+          from app import Engine, BLOCK_SIZE
+          eng = Engine()
+          indata = tone(220.0, dur=BLOCK_SIZE/SR).reshape(-1, 1)[:BLOCK_SIZE]
+          outdata = np.zeros_like(indata)
+          for effect in ['Off', 'Deep', 'Chipmunk', 'Robot', 'Echo']:
+              eng.effect = effect
+              eng._callback(indata, outdata, BLOCK_SIZE, None, None)
+              assert outdata.shape == indata.shape
+              assert np.isfinite(outdata).all()
+              assert np.abs(outdata).max() <= 1.0001
+              print(f'Engine callback {effect}: OK')
+
+          print('ALL TESTS PASSED on real Windows Python')
+          "
+
+      - name: Check audio device enumeration doesn't crash
+        shell: pwsh
+        run: |
+          python -c "
+          import sounddevice as sd
+          devices = sd.query_devices()
+          print(f'sounddevice imported OK, {len(devices)} device(s) visible on this runner')
+          "
+
+      - name: Build exe with PyInstaller
+        run: pyinstaller --onefile --windowed --name VoiceChanger app.py
+
+      - name: Smoke-test the built exe launches and stays alive
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath "dist\VoiceChanger.exe" -PassThru
+          Start-Sleep -Seconds 5
+          $alive = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if ($null -eq $alive) {
+            Write-Error "VoiceChanger.exe exited within 5 seconds — likely crashed on startup"
+            exit 1
+          }
+          Write-Host "VoiceChanger.exe is running after 5s (pid $($proc.Id)) — smoke test passed"
+          Stop-Process -Id $proc.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChanger-windows-exe
+          path: dist/VoiceChanger.exe
