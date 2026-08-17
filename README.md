@@ -1,8 +1,8 @@
 # Simple Voice Changer (Windows)
 
-Real-time mic voice changer with 4 effects: **Deep**, **Chipmunk**, **Robot**,
-**Echo**. Pure DSP (resampling, ring modulation, delay line) — no AI models,
-no GPU needed, tiny and fast.
+Real-time mic voice changer with 5 effects: **Deep**, **Chipmunk**,
+**Pitch Shift** (live slider), **Robot**, **Echo**. Pure DSP (resampling,
+ring modulation, delay line) — no AI models, no GPU needed, tiny and fast.
 
 ## Run it from source (any OS with Python 3.10+)
 
@@ -45,6 +45,7 @@ routed into other apps that way.)
 |---|---|
 | Deep | Pitch shifted down (~0.7x) |
 | Chipmunk | Pitch shifted up (~1.6x) |
+| Pitch Shift | Custom pitch, set live with the slider (0.5x–2.0x) — dragging it previews instantly |
 | Robot | Ring modulation against a 55Hz carrier |
 | Echo | Feedback delay line (~280ms, decaying repeats) |
 

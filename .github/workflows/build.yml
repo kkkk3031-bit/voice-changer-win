@@ -80,13 +80,19 @@ jobs:
           eng = Engine()
           indata = tone(220.0, dur=BLOCK_SIZE/SR).reshape(-1, 1)[:BLOCK_SIZE]
           outdata = np.zeros_like(indata)
-          for effect in ['Off', 'Deep', 'Chipmunk', 'Robot', 'Echo']:
+          for effect in ['Off', 'Deep', 'Chipmunk', 'Pitch Shift', 'Robot', 'Echo']:
               eng.effect = effect
               eng._callback(indata, outdata, BLOCK_SIZE, None, None)
               assert outdata.shape == indata.shape
               assert np.isfinite(outdata).all()
               assert np.abs(outdata).max() <= 1.0001
               print(f'Engine callback {effect}: OK')
+
+          ps3 = PitchShifter()
+          y5 = run_blockwise(lambda c: ps3.process(c, 1.3), x)
+          f5 = dominant_freq(y5)
+          assert abs(f5 - 286) < 15, f'pitch shift slider factor wrong: got {f5}'
+          print(f'pitch shift slider (1.3x) OK: {f5:.1f}Hz')
 
           print('ALL TESTS PASSED on real Windows Python')
           "

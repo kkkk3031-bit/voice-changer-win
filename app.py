@@ -19,7 +19,7 @@ from dsp import PitchShifter, Echo, robot, clip
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 2048
 
-EFFECTS = ["Off", "Deep", "Chipmunk", "Robot", "Echo"]
+EFFECTS = ["Off", "Deep", "Chipmunk", "Pitch Shift", "Robot", "Echo"]
 
 
 class Engine:
@@ -32,6 +32,7 @@ class Engine:
         self.effect = "Off"
         self.pitch_deep = 0.7
         self.pitch_chipmunk = 1.6
+        self.pitch_custom = 1.0
         self.robot_hz = 55.0
         self.echo = Echo(SAMPLE_RATE)
         self._pitch_shifter = PitchShifter()
@@ -49,6 +50,8 @@ class Engine:
             y = self._pitch_shifter.process(x, self.pitch_deep)
         elif effect == "Chipmunk":
             y = self._pitch_shifter.process(x, self.pitch_chipmunk)
+        elif effect == "Pitch Shift":
+            y = self._pitch_shifter.process(x, self.pitch_custom)
         elif effect == "Robot":
             y = robot(x, SAMPLE_RATE, self.robot_hz, self._robot_state)
         elif effect == "Echo":
@@ -83,7 +86,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Simple Voice Changer")
-        self.geometry("420x360")
+        self.geometry("420x420")
         self.resizable(False, False)
         self.engine = Engine()
 
@@ -119,11 +122,28 @@ class App(tk.Tk):
         effect_combo.pack(**pad)
         effect_combo.bind("<<ComboboxSelected>>", lambda e: setattr(self.engine, "effect", self.effect_var.get()))
 
+        self.pitch_label_var = tk.StringVar(value="Pitch Shift: 1.00x")
+        tk.Label(self, textvariable=self.pitch_label_var).pack(anchor="w", **pad)
+        self.pitch_var = tk.DoubleVar(value=1.0)
+        pitch_scale = ttk.Scale(
+            self, from_=0.5, to=2.0, orient="horizontal",
+            variable=self.pitch_var, command=self._on_pitch_slide,
+        )
+        pitch_scale.pack(fill="x", padx=10)
+
         self.toggle_btn = tk.Button(self, text="Start", width=20, command=self._toggle)
         self.toggle_btn.pack(pady=16)
 
         self.status_var = tk.StringVar(value="Stopped")
         tk.Label(self, textvariable=self.status_var, fg="gray").pack()
+
+    def _on_pitch_slide(self, value):
+        factor = float(value)
+        self.engine.pitch_custom = factor
+        self.pitch_label_var.set(f"Pitch Shift: {factor:.2f}x")
+        # dragging the slider previews it live, regardless of the effect dropdown
+        self.effect_var.set("Pitch Shift")
+        self.engine.effect = "Pitch Shift"
 
     def _refresh_devices(self):
         inputs, outputs = self._device_lists()
